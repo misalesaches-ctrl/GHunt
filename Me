@@ -1,0 +1,217 @@
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- Crear ScreenGui
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "misael"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+-- Contenedor de botones
+local frame = Instance.new("Frame")
+frame.Name = "Container"
+frame.Size = UDim2.new(0, 180, 0, 120)
+frame.Position = UDim2.new(1, -190, 0, 20) -- esquina superior derecha
+frame.AnchorPoint = Vector2.new(0, 0)
+frame.BackgroundTransparency = 0.15
+frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+frame.BorderSizePixel = 0
+frame.Parent = screenGui
+frame.Active = true
+frame.Draggable = true -- opcional: arrastrable
+
+local uiCorner = Instance.new("UICorner", frame)
+uiCorner.CornerRadius = UDim.new(0, 8)
+
+local title = Instance.new("TextLabel")
+title.Name = "Title"
+title.Size = UDim2.new(1, -12, 0, 28)
+title.Position = UDim2.new(0, 6, 0, 6)
+title.BackgroundTransparency = 1
+title.Text = "misael"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 18
+title.TextColor3 = Color3.fromRGB(255,255,255)
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = frame
+
+local function makeButton(name, y)
+    local b = Instance.new("TextButton")
+    b.Name = name
+    b.Size = UDim2.new(1, -12, 0, 28)
+    b.Position = UDim2.new(0, 6, 0, y)
+    b.BackgroundColor3 = Color3.fromRGB(40,40,40)
+    b.BorderSizePixel = 0
+    b.AutoButtonColor = true
+    b.Font = Enum.Font.Gotham
+    b.TextSize = 16
+    b.TextColor3 = Color3.fromRGB(240,240,240)
+    b.Text = name
+    local corner = Instance.new("UICorner", b)
+    corner.CornerRadius = UDim.new(0,6)
+    b.Parent = frame
+    return b
+end
+
+local btnTP = makeButton("TP", 40)
+local btnTP2 = makeButton("TP2", 74)
+local btnTRAS = makeButton("TRAS", 108)
+
+-- Ajustar tamaño del frame según botones
+frame.Size = UDim2.new(0, 180, 0, 150)
+
+-- Estado y variables
+local savedCFrame = nil
+local noclipEnabled = false
+local savedCollisions = {} -- para restaurar
+local noclipConnection = nil
+
+local function getCharacter()
+    return player.Character or player.CharacterAdded:Wait()
+end
+
+local function setMessage(text, duration)
+    -- muestra mensaje temporal encima del HUD
+    local existing = frame:FindFirstChild("Msg")
+    if existing then existing:Destroy() end
+    local msg = Instance.new("TextLabel")
+    msg.Name = "Msg"
+    msg.Size = UDim2.new(1, -12, 0, 22)
+    msg.Position = UDim2.new(0, 6, 0, frame.Size.Y.Offset - 28)
+    msg.BackgroundTransparency = 0.35
+    msg.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    msg.TextColor3 = Color3.fromRGB(255,255,255)
+    msg.Font = Enum.Font.Gotham
+    msg.TextSize = 14
+    msg.Text = text
+    msg.TextWrapped = true
+    local corner = Instance.new("UICorner", msg)
+    corner.CornerRadius = UDim.new(0,6)
+    msg.Parent = frame
+    if duration and duration > 0 then
+        delay(duration, function()
+            if msg then pcall(function() msg:Destroy() end) end
+        end)
+    end
+end
+
+-- Funcionalidad TP (guardar posición actual)
+btnTP.MouseButton1Click:Connect(function()
+    local char = getCharacter()
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if hrp and hrp:IsA("BasePart") then
+        savedCFrame = hrp.CFrame
+        setMessage("Ubicación guardada.", 3)
+    else
+        setMessage("No se encontró HumanoidRootPart.", 3)
+    end
+end)
+
+-- Funcionalidad TP2 (teletransportarse a la ubicación guardada)
+btnTP2.MouseButton1Click:Connect(function()
+    local char = getCharacter()
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not savedCFrame then
+        setMessage("Primero guarda una ubicación con TP.", 3)
+        return
+    end
+    if hrp and hrp:IsA("BasePart") then
+        -- Intentamos teletransportar limpiamente
+        -- Usamos una pequeña inmovilidad para evitar conflictos
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.PlatformStand = true
+        end
+        hrp.CFrame = savedCFrame + Vector3.new(0, 3, 0) -- evitar quedar dentro del suelo
+        if humanoid then
+            delay(0.15, function() pcall(function() humanoid.PlatformStand = false end) end)
+        end
+        setMessage("Teletransportado.", 2)
+    else
+        setMessage("No se encontró HumanoidRootPart.", 3)
+    end
+end)
+
+-- Noclip helpers
+local function disableCollisions(char)
+    savedCollisions = {}
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            savedCollisions[part] = part.CanCollide
+            part.CanCollide = false
+        end
+    end
+end
+
+local function restoreCollisions(char)
+    for part, can in pairs(savedCollisions) do
+        if part and part.Parent then
+            part.CanCollide = can
+        end
+    end
+    savedCollisions = {}
+end
+
+local function enableNoclip()
+    local char = getCharacter()
+    if not char then return end
+    disableCollisions(char)
+    noclipEnabled = true
+    -- mantener noclip mientras exista el character
+    noclipConnection = RunService.Stepped:Connect(function()
+        local c = player.Character
+        if c then
+            for _, p in ipairs(c:GetDescendants()) do
+                if p:IsA("BasePart") then
+                    p.CanCollide = false
+                end
+            end
+        end
+    end)
+    setMessage("TRAS activado (noclip).", 2)
+end
+
+local function disableNoclip()
+    local char = player.Character
+    if noclipConnection then
+        noclipConnection:Disconnect()
+        noclipConnection = nil
+    end
+    if char then
+        restoreCollisions(char)
+    end
+    noclipEnabled = false
+    setMessage("TRAS desactivado.", 2)
+end
+
+-- Toggle TRAS
+btnTRAS.MouseButton1Click:Connect(function()
+    if not noclipEnabled then
+        enableNoclip()
+        btnTRAS.BackgroundColor3 = Color3.fromRGB(100, 0, 100)
+    else
+        disableNoclip()
+        btnTRAS.BackgroundColor3 = Color3.fromRGB(40,40,40)
+    end
+end)
+
+-- Restaurar colisiones al reaparecer
+player.CharacterAdded:Connect(function(char)
+    -- si el noclip está desactivado, asegurarse que las colisiones estén en su estado normal
+    if not noclipEnabled then
+        -- no hacemos nada especial
+        return
+    else
+        -- si está activado, aplicar noclip al nuevo character
+        delay(0.1, function()
+            disableCollisions(char)
+        end)
+    end
+end)
+
+-- Mensaje inicial
+setMessage("misael listo. Usa TP, TP2 y TRAS.", 4)
